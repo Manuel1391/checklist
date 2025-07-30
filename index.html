@@ -31,6 +31,12 @@
         cursor: pointer;
     }
     header button:hover { background-color: #5393ff; }
+    header input[type="text"] {
+        padding: 5px;
+        border-radius: 4px;
+        border: none;
+        margin-right: 10px;
+    }
     .container { padding: 10px; }
     .block {
         background-color: #1e1e1e;
@@ -91,17 +97,23 @@
         cursor: pointer;
     }
     .delete-btn:hover { color: #ffaaaa; }
+    .hide-edit .delete-btn,
+    .hide-edit .buttons-inline button { display: none; }
 </style>
 </head>
 <body>
 <header>
+    <label for="numeroInforme" style="color:white;font-weight:bold;">Número de informe:</label>
+    <input type="text" id="numeroInforme" value="0001">
     <button onclick="addSection()">+ Nueva sección</button>
     <button onclick="toggleVisibility()">Ocultar no marcados</button>
+    <button onclick="toggleEditButtons()">Ocultar/Mostrar opciones</button>
     <button onclick="saveData()">Guardar datos</button>
     <button onclick="loadData()">Cargar datos</button>
     <button onclick="saveTemplate()">Guardar plantilla</button>
     <button onclick="loadTemplate()">Cargar plantilla</button>
     <button onclick="clearAll()">Limpiar todo</button>
+    <button onclick="sendWhatsApp()">Enviar por WhatsApp</button>
 </header>
 
 <div class="container" id="mainContainer"></div>
@@ -109,6 +121,7 @@
 <script>
 let maxLevels = 5;
 let hideUnchecked = false;
+let hideEdit = false;
 
 function createDeleteButton(target) {
     const btn = document.createElement("button");
@@ -219,6 +232,11 @@ function toggleVisibility() {
     });
 }
 
+function toggleEditButtons() {
+    hideEdit = !hideEdit;
+    document.body.classList.toggle("hide-edit", hideEdit);
+}
+
 function serializeBlock(block) {
     const obj = {
         title: block.querySelector(".title").textContent,
@@ -246,7 +264,6 @@ function deserializeBlock(data) {
     const block = createBlock(data.title, data.level);
 
     data.fields.forEach(f => {
-        // Crear manualmente un campo SIN prompt
         const field = document.createElement("div");
         field.className = "field";
         field.appendChild(createDeleteButton(field));
@@ -306,26 +323,28 @@ function exportJSON(data, filename) {
     link.click();
 }
 
-function saveData() {
-    const data = [];
+function collectAllData() {
+    const numero = document.getElementById("numeroInforme").value || "0000";
+    const data = { numeroInforme: numero, contenido: [] };
     document.querySelectorAll("#mainContainer > .block").forEach(block => {
-        data.push(serializeBlock(block));
+        data.contenido.push(serializeBlock(block));
     });
-    exportJSON(data, "datos_tasacion.json");
+    return data;
+}
+
+function saveData() {
+    const data = collectAllData();
+    exportJSON(data, `datos_${data.numeroInforme}.json`);
 }
 
 function saveTemplate() {
-    const data = [];
-    document.querySelectorAll("#mainContainer > .block").forEach(block => {
-        const b = serializeBlock(block);
-        function clearFields(b){ 
-            b.fields.forEach(f => { f.yo = false; f.digitadora = false; f.text = ""; });
-            b.children.forEach(clearFields);
-        }
-        clearFields(b);
-        data.push(b);
-    });
-    exportJSON(data, "plantilla_tasacion.json");
+    const data = collectAllData();
+    function clearFields(b){ 
+        b.fields.forEach(f => { f.yo = false; f.digitadora = false; f.text = ""; });
+        b.children.forEach(clearFields);
+    }
+    data.contenido.forEach(clearFields);
+    exportJSON(data, `plantilla_${data.numeroInforme}.json`);
 }
 
 function loadFile(callback) {
@@ -343,20 +362,28 @@ function loadFile(callback) {
 
 function loadData() {
     loadFile(data => {
+        document.getElementById("numeroInforme").value = data.numeroInforme || "0000";
         document.getElementById("mainContainer").innerHTML = "";
-        data.forEach(b => document.getElementById("mainContainer").appendChild(deserializeBlock(b)));
+        (data.contenido || data).forEach(b => 
+            document.getElementById("mainContainer").appendChild(deserializeBlock(b))
+        );
     });
 }
 
 function loadTemplate() {
-    loadFile(data => {
-        document.getElementById("mainContainer").innerHTML = "";
-        data.forEach(b => document.getElementById("mainContainer").appendChild(deserializeBlock(b)));
-    });
+    loadData();
 }
 
 function clearAll() {
     if(confirm("¿Borrar todo?")) document.getElementById("mainContainer").innerHTML = "";
+}
+
+function sendWhatsApp() {
+    const data = collectAllData();
+    exportJSON(data, `datos_${data.numeroInforme}.json`);
+    const text = `Informe ${data.numeroInforme} listo. Adjunto el archivo.`;
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
 }
 </script>
 </body>
