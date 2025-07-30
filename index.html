@@ -46,11 +46,23 @@
         box-shadow: 0 2px 6px rgba(0,0,0,0.6);
         position: relative;
     }
+    .collapsed > .block,
+    .collapsed > .field { display: none; }
+    .collapse-btn {
+        background:none;
+        border:none;
+        color:#80d8ff;
+        font-size:18px;
+        cursor:pointer;
+        margin-right:5px;
+    }
     .title {
         font-weight: bold;
         font-size: 1.1em;
         margin-bottom: 5px;
         color: #80d8ff;
+        display: flex;
+        align-items: center;
     }
     .buttons-inline button {
         margin: 5px 5px 5px 0;
@@ -99,12 +111,20 @@
     .delete-btn:hover { color: #ffaaaa; }
     .hide-edit .delete-btn,
     .hide-edit .buttons-inline button { display: none; }
+
+    /* Sangría visual por niveles */
+    .level-1 { border-left: 4px solid #80d8ff; padding-left: 6px; }
+    .level-2 { border-left: 4px solid #4caf50; margin-left: 15px; padding-left: 6px;}
+    .level-3 { border-left: 4px solid #ff9800; margin-left: 30px; padding-left: 6px;}
+    .level-4 { border-left: 4px solid #9c27b0; margin-left: 45px; padding-left: 6px;}
+    .level-5 { border-left: 4px solid #f44336; margin-left: 60px; padding-left: 6px;}
 </style>
 </head>
 <body>
 <header>
     <label for="numeroInforme" style="color:white;font-weight:bold;">Número de informe:</label>
     <input type="text" id="numeroInforme" value="0001">
+    <input type="text" id="searchBox" placeholder="Buscar...">
     <button onclick="addSection()">+ Nueva sección</button>
     <button onclick="toggleVisibility()">Ocultar no marcados</button>
     <button onclick="toggleEditButtons()">Ocultar/Mostrar opciones</button>
@@ -123,6 +143,85 @@ let maxLevels = 5;
 let hideUnchecked = false;
 let hideEdit = false;
 
+// Búsqueda / filtro en vivo
+document.getElementById('searchBox').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll(".block, .field").forEach(el => {
+        const txt = el.textContent.toLowerCase();
+        el.style.display = txt.includes(q) ? "" : "none";
+    });
+});
+
+// Sistema mejorado de Drag & Drop (solo mismo nivel)
+function makeDraggable(container) {
+    let dragged = null;
+    let placeholder = document.createElement("div");
+    placeholder.style.height = "4px";
+    placeholder.style.background = "#2979ff";
+    placeholder.style.margin = "4px 0";
+    placeholder.style.borderRadius = "2px";
+    placeholder.style.display = "none";
+
+    container.addEventListener("dragstart", e => {
+        if (e.target.classList.contains("block") || e.target.classList.contains("field")) {
+            dragged = e.target;
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", "");
+            setTimeout(() => e.target.style.opacity = "0.3", 0);
+        }
+    });
+
+    container.addEventListener("dragend", () => {
+        if (dragged) dragged.style.opacity = "";
+        dragged = null;
+        placeholder.style.display = "none";
+    });
+
+    container.addEventListener("dragover", e => {
+    e.preventDefault();
+    if (!dragged) return;
+
+    // Encuentra el hijo directo bajo el mouse
+    const target = Array.from(container.children).find(child => {
+        const rect = child.getBoundingClientRect();
+        return (
+            e.clientY >= rect.top &&
+            e.clientY <= rect.bottom
+        );
+    });
+
+    if (!target || target === dragged || target === placeholder) return;
+
+    // Restringir: mismo tipo (block-block o field-field)
+    const draggedIsBlock = dragged.classList.contains("block");
+    const targetIsBlock = target.classList.contains("block");
+    if (draggedIsBlock !== targetIsBlock) return;
+
+    // Asegurar mismo contenedor (nivel)
+    if (target.parentNode !== dragged.parentNode) return;
+
+    // Colocar placeholder antes o después según posición del mouse
+    const rect = target.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    placeholder.style.display = "block";
+    container.insertBefore(placeholder, before ? target : target.nextSibling);
+});
+
+container.addEventListener("drop", e => {
+    e.preventDefault();
+    if (dragged && placeholder.parentNode === container) {
+        container.insertBefore(dragged, placeholder);
+    }
+    placeholder.style.display = "none";
+});
+
+    Array.from(container.children).forEach(child => {
+        if (child.classList.contains("block") || child.classList.contains("field")) {
+            child.setAttribute("draggable", "true");
+        }
+    });
+}
+
 function createDeleteButton(target) {
     const btn = document.createElement("button");
     btn.className = "delete-btn";
@@ -133,15 +232,28 @@ function createDeleteButton(target) {
     return btn;
 }
 
+function createCollapseButton(block) {
+    const btn = document.createElement("button");
+    btn.className = "collapse-btn";
+    btn.innerHTML = "▼";
+    btn.onclick = () => {
+        block.classList.toggle("collapsed");
+        btn.innerHTML = block.classList.contains("collapsed") ? "▶" : "▼";
+    };
+    return btn;
+}
+
 function createBlock(title, level=1) {
     const block = document.createElement("div");
-    block.className = "block";
+    block.className = `block level-${level}`;
     block.dataset.level = level;
+
     block.appendChild(createDeleteButton(block));
 
     const titleDiv = document.createElement("div");
     titleDiv.className = "title";
-    titleDiv.textContent = title;
+    titleDiv.appendChild(createCollapseButton(block));
+    titleDiv.appendChild(document.createTextNode(title));
     block.appendChild(titleDiv);
 
     const btns = document.createElement("div");
@@ -151,22 +263,37 @@ function createBlock(title, level=1) {
         btnSub.textContent = "+ Agregar subsección";
         btnSub.onclick = () => {
             const name = prompt("Nombre de la subsección:");
-            if(name) block.appendChild(createBlock(name, level+1));
+            if(name) {
+                const sub = createBlock(name, level+1);
+                block.appendChild(sub);
+                makeDraggable(block);
+            }
         };
         btns.appendChild(btnSub);
     }
     const btnField = document.createElement("button");
     btnField.textContent = "+ Agregar campo";
-    btnField.onclick = () => addField(block);
+    btnField.onclick = () => {
+        addField(block);
+        makeDraggable(block);
+    };
     btns.appendChild(btnField);
 
     block.appendChild(btns);
+
+    // Activar arrastrable en hijos de este bloque
+    makeDraggable(block);
+
     return block;
 }
 
 function addSection() {
     const name = prompt("Nombre de la sección:");
-    if(name) document.getElementById("mainContainer").appendChild(createBlock(name, 1));
+    if(name) {
+        const main = document.getElementById("mainContainer");
+        main.appendChild(createBlock(name, 1));
+        makeDraggable(main);
+    }
 }
 
 function addField(parentBlock) {
@@ -184,17 +311,13 @@ function addField(parentBlock) {
     chkMe.type = "checkbox";
     chkMe.onchange = () => updateFieldColor(field);
     label.appendChild(chkMe);
-    const lblMe = document.createElement("span");
-    lblMe.textContent = "Yo";
-    label.appendChild(lblMe);
+    label.appendChild(document.createTextNode("Yo"));
 
     const chkAsist = document.createElement("input");
     chkAsist.type = "checkbox";
     chkAsist.onchange = () => updateFieldColor(field);
     label.appendChild(chkAsist);
-    const lblAsist = document.createElement("span");
-    lblAsist.textContent = "Digitadora";
-    label.appendChild(lblAsist);
+    label.appendChild(document.createTextNode("Digitadora"));
 
     const fixedLabel = document.createElement("span");
     fixedLabel.className = "field-label";
@@ -239,7 +362,7 @@ function toggleEditButtons() {
 
 function serializeBlock(block) {
     const obj = {
-        title: block.querySelector(".title").textContent,
+        title: block.querySelector(".title").textContent.trim().replace(/^▶|▼/, "").trim(),
         level: parseInt(block.dataset.level),
         fields: [],
         children: []
@@ -276,20 +399,14 @@ function deserializeBlock(data) {
         chkMe.checked = f.yo;
         chkMe.onchange = () => updateFieldColor(field);
         label.appendChild(chkMe);
-
-        const lblMe = document.createElement("span");
-        lblMe.textContent = "Yo";
-        label.appendChild(lblMe);
+        label.appendChild(document.createTextNode("Yo"));
 
         const chkAsist = document.createElement("input");
         chkAsist.type = "checkbox";
         chkAsist.checked = f.digitadora;
         chkAsist.onchange = () => updateFieldColor(field);
         label.appendChild(chkAsist);
-
-        const lblAsist = document.createElement("span");
-        lblAsist.textContent = "Digitadora";
-        label.appendChild(lblAsist);
+        label.appendChild(document.createTextNode("Digitadora"));
 
         const fixedLabel = document.createElement("span");
         fixedLabel.className = "field-label";
@@ -312,6 +429,7 @@ function deserializeBlock(data) {
         block.appendChild(deserializeBlock(child));
     });
 
+    makeDraggable(block);
     return block;
 }
 
@@ -367,6 +485,7 @@ function loadData() {
         (data.contenido || data).forEach(b => 
             document.getElementById("mainContainer").appendChild(deserializeBlock(b))
         );
+        makeDraggable(document.getElementById("mainContainer"));
     });
 }
 
