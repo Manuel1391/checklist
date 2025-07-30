@@ -134,6 +134,8 @@
     <button onclick="loadTemplate()">Cargar plantilla</button>
     <button onclick="clearAll()">Limpiar todo</button>
     <button onclick="sendWhatsApp()">Enviar por WhatsApp</button>
+    <button onclick="toggleAllBlocks()">Expandir/Colapsar todo</button>
+    <span id="unsavedIndicator" style="color:orange;font-weight:bold;margin-left:10px;"></span>
 </header>
 
 <div class="container" id="mainContainer"></div>
@@ -142,6 +144,40 @@
 let maxLevels = 5;
 let hideUnchecked = false;
 let hideEdit = false;
+let unsaved = false;
+
+// Marcar cambios no guardados
+function markUnsaved() {
+    if (!unsaved) {
+        unsaved = true;
+        document.title = "* " + document.title;
+        document.getElementById("unsavedIndicator").textContent = "(No guardado)";
+    }
+}
+function markSaved() {
+    unsaved = false;
+    document.title = document.title.replace(/^\*\s*/, "");
+    document.getElementById("unsavedIndicator").textContent = "";
+}
+
+// Expandir/Colapsar todo
+let allCollapsed = false;
+function toggleAllBlocks() {
+    const blocks = document.querySelectorAll(".block");
+    allCollapsed = !allCollapsed;
+    blocks.forEach(block => {
+        const btn = block.querySelector(".collapse-btn");
+        if (btn) {
+            if (allCollapsed) {
+                block.classList.add("collapsed");
+                btn.innerHTML = "▶";
+            } else {
+                block.classList.remove("collapsed");
+                btn.innerHTML = "▼";
+            }
+        }
+    });
+}
 
 // Búsqueda / filtro en vivo
 document.getElementById('searchBox').addEventListener('input', e => {
@@ -152,7 +188,7 @@ document.getElementById('searchBox').addEventListener('input', e => {
     });
 });
 
-// Sistema mejorado de Drag & Drop (solo mismo nivel)
+// Sistema Drag & Drop
 function makeDraggable(container) {
     let dragged = null;
     let placeholder = document.createElement("div");
@@ -178,42 +214,34 @@ function makeDraggable(container) {
     });
 
     container.addEventListener("dragover", e => {
-    e.preventDefault();
-    if (!dragged) return;
+        e.preventDefault();
+        if (!dragged) return;
 
-    // Encuentra el hijo directo bajo el mouse
-    const target = Array.from(container.children).find(child => {
-        const rect = child.getBoundingClientRect();
-        return (
-            e.clientY >= rect.top &&
-            e.clientY <= rect.bottom
-        );
+        const target = Array.from(container.children).find(child => {
+            const rect = child.getBoundingClientRect();
+            return (e.clientY >= rect.top && e.clientY <= rect.bottom);
+        });
+
+        if (!target || target === dragged || target === placeholder) return;
+        const draggedIsBlock = dragged.classList.contains("block");
+        const targetIsBlock = target.classList.contains("block");
+        if (draggedIsBlock !== targetIsBlock) return;
+        if (target.parentNode !== dragged.parentNode) return;
+
+        const rect = target.getBoundingClientRect();
+        const before = (e.clientY - rect.top) < rect.height / 2;
+        placeholder.style.display = "block";
+        container.insertBefore(placeholder, before ? target : target.nextSibling);
     });
 
-    if (!target || target === dragged || target === placeholder) return;
-
-    // Restringir: mismo tipo (block-block o field-field)
-    const draggedIsBlock = dragged.classList.contains("block");
-    const targetIsBlock = target.classList.contains("block");
-    if (draggedIsBlock !== targetIsBlock) return;
-
-    // Asegurar mismo contenedor (nivel)
-    if (target.parentNode !== dragged.parentNode) return;
-
-    // Colocar placeholder antes o después según posición del mouse
-    const rect = target.getBoundingClientRect();
-    const before = (e.clientY - rect.top) < rect.height / 2;
-    placeholder.style.display = "block";
-    container.insertBefore(placeholder, before ? target : target.nextSibling);
-});
-
-container.addEventListener("drop", e => {
-    e.preventDefault();
-    if (dragged && placeholder.parentNode === container) {
-        container.insertBefore(dragged, placeholder);
-    }
-    placeholder.style.display = "none";
-});
+    container.addEventListener("drop", e => {
+        e.preventDefault();
+        if (dragged && placeholder.parentNode === container) {
+            container.insertBefore(dragged, placeholder);
+            markUnsaved();
+        }
+        placeholder.style.display = "none";
+    });
 
     Array.from(container.children).forEach(child => {
         if (child.classList.contains("block") || child.classList.contains("field")) {
@@ -227,7 +255,10 @@ function createDeleteButton(target) {
     btn.className = "delete-btn";
     btn.textContent = "🗑️";
     btn.onclick = () => {
-        if(confirm("¿Eliminar este bloque?")) target.remove();
+        if(confirm("¿Eliminar este bloque?")) {
+            target.remove();
+            markUnsaved();
+        }
     };
     return btn;
 }
@@ -247,7 +278,6 @@ function createBlock(title, level=1) {
     const block = document.createElement("div");
     block.className = `block level-${level}`;
     block.dataset.level = level;
-
     block.appendChild(createDeleteButton(block));
 
     const titleDiv = document.createElement("div");
@@ -267,6 +297,7 @@ function createBlock(title, level=1) {
                 const sub = createBlock(name, level+1);
                 block.appendChild(sub);
                 makeDraggable(block);
+                markUnsaved();
             }
         };
         btns.appendChild(btnSub);
@@ -276,14 +307,12 @@ function createBlock(title, level=1) {
     btnField.onclick = () => {
         addField(block);
         makeDraggable(block);
+        markUnsaved();
     };
     btns.appendChild(btnField);
-
     block.appendChild(btns);
 
-    // Activar arrastrable en hijos de este bloque
     makeDraggable(block);
-
     return block;
 }
 
@@ -293,6 +322,7 @@ function addSection() {
         const main = document.getElementById("mainContainer");
         main.appendChild(createBlock(name, 1));
         makeDraggable(main);
+        markUnsaved();
     }
 }
 
@@ -309,13 +339,13 @@ function addField(parentBlock) {
 
     const chkMe = document.createElement("input");
     chkMe.type = "checkbox";
-    chkMe.onchange = () => updateFieldColor(field);
+    chkMe.onchange = () => { updateFieldColor(field); markUnsaved(); };
     label.appendChild(chkMe);
     label.appendChild(document.createTextNode("Yo"));
 
     const chkAsist = document.createElement("input");
     chkAsist.type = "checkbox";
-    chkAsist.onchange = () => updateFieldColor(field);
+    chkAsist.onchange = () => { updateFieldColor(field); markUnsaved(); };
     label.appendChild(chkAsist);
     label.appendChild(document.createTextNode("Digitadora"));
 
@@ -326,22 +356,24 @@ function addField(parentBlock) {
     const textInput = document.createElement("input");
     textInput.type = "text";
     textInput.placeholder = "Escribe aquí...";
+    textInput.addEventListener("input", markUnsaved);
 
     field.appendChild(label);
     field.appendChild(fixedLabel);
     field.appendChild(textInput);
 
     parentBlock.appendChild(field);
+    markUnsaved();
 }
 
 function updateFieldColor(field) {
     const [yo, digitadora] = field.querySelectorAll("input[type=checkbox]");
     if (yo.checked && digitadora.checked) {
-        field.style.backgroundColor = "#5e3c7f"; // violeta
+        field.style.backgroundColor = "#5e3c7f";
     } else if (yo.checked) {
-        field.style.backgroundColor = "#2e7d32"; // verde
+        field.style.backgroundColor = "#2e7d32";
     } else if (digitadora.checked) {
-        field.style.backgroundColor = "#1565c0"; // azul
+        field.style.backgroundColor = "#1565c0";
     } else {
         field.style.backgroundColor = "#2b2b2b";
     }
@@ -385,7 +417,6 @@ function serializeBlock(block) {
 
 function deserializeBlock(data) {
     const block = createBlock(data.title, data.level);
-
     data.fields.forEach(f => {
         const field = document.createElement("div");
         field.className = "field";
@@ -397,14 +428,14 @@ function deserializeBlock(data) {
         const chkMe = document.createElement("input");
         chkMe.type = "checkbox";
         chkMe.checked = f.yo;
-        chkMe.onchange = () => updateFieldColor(field);
+        chkMe.onchange = () => { updateFieldColor(field); markUnsaved(); };
         label.appendChild(chkMe);
         label.appendChild(document.createTextNode("Yo"));
 
         const chkAsist = document.createElement("input");
         chkAsist.type = "checkbox";
         chkAsist.checked = f.digitadora;
-        chkAsist.onchange = () => updateFieldColor(field);
+        chkAsist.onchange = () => { updateFieldColor(field); markUnsaved(); };
         label.appendChild(chkAsist);
         label.appendChild(document.createTextNode("Digitadora"));
 
@@ -416,6 +447,7 @@ function deserializeBlock(data) {
         textInput.type = "text";
         textInput.value = f.text || "";
         textInput.placeholder = "Escribe aquí...";
+        textInput.addEventListener("input", markUnsaved);
 
         field.appendChild(label);
         field.appendChild(fixedLabel);
@@ -425,10 +457,7 @@ function deserializeBlock(data) {
         block.appendChild(field);
     });
 
-    data.children.forEach(child => {
-        block.appendChild(deserializeBlock(child));
-    });
-
+    data.children.forEach(child => block.appendChild(deserializeBlock(child)));
     makeDraggable(block);
     return block;
 }
@@ -453,16 +482,18 @@ function collectAllData() {
 function saveData() {
     const data = collectAllData();
     exportJSON(data, `datos_${data.numeroInforme}.json`);
+    markSaved();
 }
 
 function saveTemplate() {
     const data = collectAllData();
-    function clearFields(b){ 
+    function clearFields(b){
         b.fields.forEach(f => { f.yo = false; f.digitadora = false; f.text = ""; });
         b.children.forEach(clearFields);
     }
     data.contenido.forEach(clearFields);
     exportJSON(data, `plantilla_${data.numeroInforme}.json`);
+    markSaved();
 }
 
 function loadFile(callback) {
@@ -482,10 +513,11 @@ function loadData() {
     loadFile(data => {
         document.getElementById("numeroInforme").value = data.numeroInforme || "0000";
         document.getElementById("mainContainer").innerHTML = "";
-        (data.contenido || data).forEach(b => 
+        (data.contenido || data).forEach(b =>
             document.getElementById("mainContainer").appendChild(deserializeBlock(b))
         );
         makeDraggable(document.getElementById("mainContainer"));
+        markSaved();
     });
 }
 
@@ -494,7 +526,10 @@ function loadTemplate() {
 }
 
 function clearAll() {
-    if(confirm("¿Borrar todo?")) document.getElementById("mainContainer").innerHTML = "";
+    if(confirm("¿Borrar todo?")) {
+        document.getElementById("mainContainer").innerHTML = "";
+        markUnsaved();
+    }
 }
 
 function sendWhatsApp() {
