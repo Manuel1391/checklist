@@ -230,10 +230,14 @@ function createEditButton(target, isField = false) {
                 target.querySelector(".field-label").textContent = newName;
             } else {
                 const titleDiv = target.querySelector(".title");
-                // Cambiar solo el texto, manteniendo los botones
-                titleDiv.childNodes.forEach((n, i) => {
-                    if (i > 1 && n.nodeType === Node.TEXT_NODE) n.nodeValue = " " + newName;
-                });
+                // Reemplaza el nodo de texto correspondiente
+                for (let i = 0; i < titleDiv.childNodes.length; i++) {
+                    const n = titleDiv.childNodes[i];
+                    if (n.nodeType === Node.TEXT_NODE) {
+                        n.nodeValue = " " + newName;
+                        break;
+                    }
+                }
             }
             markUnsaved();
         }
