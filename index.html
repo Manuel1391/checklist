@@ -192,29 +192,23 @@ function toggleAllBlocks() {
     });
 }
 
-// Nueva búsqueda: muestra campos y expande bloques
+// Búsqueda SOLO en secciones y subsecciones
 document.getElementById('searchBox').addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
 
     document.querySelectorAll(".block").forEach(block => {
-        let matchInBlock = block.querySelector(".title").textContent.toLowerCase().includes(q);
+        const titleText = block.querySelector(".title").textContent.toLowerCase();
+        let matchInBlock = titleText.includes(q);
 
-        // Verificar campos dentro del bloque
-        block.querySelectorAll(":scope > .field").forEach(field => {
-            const txt = (field.textContent + Array.from(field.querySelectorAll('input[type=text]')).map(i=>i.value).join(' ')).toLowerCase();
-            const match = txt.includes(q);
-            field.style.display = match || q === "" ? "" : "none";
-            if (match) matchInBlock = true;
-        });
-
-        // Verificar bloques hijos
-        block.querySelectorAll(":scope > .block").forEach(child => {
+        // Revisar si algún hijo coincide
+        const childBlocks = block.querySelectorAll(":scope > .block");
+        childBlocks.forEach(child => {
             if (child.style.display !== "none") matchInBlock = true;
         });
 
-        block.style.display = matchInBlock || q === "" ? "" : "none";
+        block.style.display = (matchInBlock || q === "") ? "" : "none";
 
-        // Si hay coincidencia, expandir el bloque
+        // Si coincide, expandimos el bloque
         if (matchInBlock) {
             block.classList.remove("collapsed");
             const btn = block.querySelector(".collapse-btn");
