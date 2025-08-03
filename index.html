@@ -63,6 +63,7 @@
         color: #80d8ff;
         display: flex;
         align-items: center;
+        gap: 5px;
     }
     .buttons-inline button {
         margin: 5px 5px 5px 0;
@@ -109,8 +110,20 @@
         cursor: pointer;
     }
     .delete-btn:hover { color: #ffaaaa; }
+    .edit-btn {
+        position: absolute;
+        top: 8px;
+        right: 40px;
+        background: none;
+        border: none;
+        color: #ffd54f;
+        font-size: 18px;
+        cursor: pointer;
+    }
+    .edit-btn:hover { color: #ffe082; }
     .hide-edit .delete-btn,
-    .hide-edit .buttons-inline button { display: none; }
+    .hide-edit .buttons-inline button,
+    .hide-edit .edit-btn { display: none; }
 
     /* Sangría visual por niveles */
     .level-1 { border-left: 4px solid #80d8ff; padding-left: 6px; }
@@ -179,14 +192,60 @@ function toggleAllBlocks() {
     });
 }
 
-// Búsqueda / filtro en vivo
+// Nueva búsqueda: muestra campos y expande bloques
 document.getElementById('searchBox').addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
-    document.querySelectorAll(".block, .field").forEach(el => {
-        const txt = el.textContent.toLowerCase();
-        el.style.display = txt.includes(q) ? "" : "none";
+
+    document.querySelectorAll(".block").forEach(block => {
+        let matchInBlock = block.querySelector(".title").textContent.toLowerCase().includes(q);
+
+        // Verificar campos dentro del bloque
+        block.querySelectorAll(":scope > .field").forEach(field => {
+            const txt = (field.textContent + Array.from(field.querySelectorAll('input[type=text]')).map(i=>i.value).join(' ')).toLowerCase();
+            const match = txt.includes(q);
+            field.style.display = match || q === "" ? "" : "none";
+            if (match) matchInBlock = true;
+        });
+
+        // Verificar bloques hijos
+        block.querySelectorAll(":scope > .block").forEach(child => {
+            if (child.style.display !== "none") matchInBlock = true;
+        });
+
+        block.style.display = matchInBlock || q === "" ? "" : "none";
+
+        // Si hay coincidencia, expandir el bloque
+        if (matchInBlock) {
+            block.classList.remove("collapsed");
+            const btn = block.querySelector(".collapse-btn");
+            if (btn) btn.innerHTML = "▼";
+        }
     });
 });
+
+function createEditButton(target, isField = false) {
+    const btn = document.createElement("button");
+    btn.className = "edit-btn";
+    btn.textContent = "✏️";
+    btn.onclick = () => {
+        const newName = prompt("Nuevo nombre:", isField
+            ? target.querySelector(".field-label").textContent
+            : target.querySelector(".title").textContent.replace(/^▶|▼/, "").trim());
+        if (newName) {
+            if (isField) {
+                target.querySelector(".field-label").textContent = newName;
+            } else {
+                const titleDiv = target.querySelector(".title");
+                // Cambiar solo el texto, manteniendo los botones
+                titleDiv.childNodes.forEach((n, i) => {
+                    if (i > 1 && n.nodeType === Node.TEXT_NODE) n.nodeValue = " " + newName;
+                });
+            }
+            markUnsaved();
+        }
+    };
+    return btn;
+}
 
 // Sistema Drag & Drop
 function makeDraggable(container) {
@@ -279,6 +338,7 @@ function createBlock(title, level=1) {
     block.className = `block level-${level}`;
     block.dataset.level = level;
     block.appendChild(createDeleteButton(block));
+    block.appendChild(createEditButton(block, false));
 
     const titleDiv = document.createElement("div");
     titleDiv.className = "title";
@@ -333,6 +393,7 @@ function addField(parentBlock) {
     const field = document.createElement("div");
     field.className = "field";
     field.appendChild(createDeleteButton(field));
+    field.appendChild(createEditButton(field, true));
 
     const label = document.createElement("div");
     label.className = "check-label";
@@ -421,6 +482,7 @@ function deserializeBlock(data) {
         const field = document.createElement("div");
         field.className = "field";
         field.appendChild(createDeleteButton(field));
+        field.appendChild(createEditButton(field, true));
 
         const label = document.createElement("div");
         label.className = "check-label";
